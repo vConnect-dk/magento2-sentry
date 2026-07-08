@@ -61,6 +61,15 @@ This module uses the [Magento Deployment Configuration](https://devdocs.magento.
     'profiles_sample_rate' => 0.5,
     'ignore_js_errors' => [],
     'enable_csp_report_url' => true,
+    // Resilient delivery (protects the storefront critical path)
+    'async_sending_enabled' => true,
+    'async_fallback_on_circuit_open' => true,
+    'circuit_breaker_enabled' => true,
+    'circuit_breaker_failure_threshold' => 5,
+    'circuit_breaker_recovery_timeout' => 60,
+    'circuit_breaker_success_threshold' => 2,
+    'http_timeout' => 2,
+    'http_connect_timeout' => 1,
 ]
 ```
 
@@ -97,6 +106,28 @@ Next to that there are some configuration options under Stores > Configuration >
 | `spotlight` | `false` | Enable [Spotlight](https://spotlightjs.com/) on the page |
 | `spotlight_url` | - | Override the [Sidecar url](https://spotlightjs.com/sidecar/) |         
 | `enable_csp_report_url` | `false` | If set to true, the report-uri will be automatically added based on the DSN. |
+| `async_sending_enabled` | `false` | When `true`, Sentry envelopes are published to Magento MQ on the request path and delivered by the `justbetter.sentry.event` consumer. Envelope `sent_at` / event timestamps are frozen at **publish** time (not consumer send time). |
+| `async_fallback_on_circuit_open` | `true` | If synchronous HTTP fails or the circuit breaker is open, fall back to async MQ publishing instead of blocking / dropping immediately. |
+| `circuit_breaker_enabled` | `true` | Fail fast on synchronous Sentry HTTP after repeated failures so a degraded Sentry cannot stall shoppers. |
+| `circuit_breaker_failure_threshold` | `5` | Consecutive HTTP failures before the circuit opens. |
+| `circuit_breaker_recovery_timeout` | `60` | Seconds to wait before allowing a probe request after the circuit opens. |
+| `circuit_breaker_success_threshold` | `2` | Successful probes in half-open state required before closing the circuit. |
+| `http_timeout` | `2` | Total HTTP timeout (seconds) for Sentry envelope delivery (sync + consumer). Keep low on storefront. |
+| `http_connect_timeout` | `1` | HTTP connect timeout (seconds) for Sentry envelope delivery. |
+
+### Resilient delivery (async + circuit breaker)
+
+Sentry HTTP is no longer allowed to sit unbounded on the Magento request path:
+
+1. **Async mode** (`async_sending_enabled`): the resilient transport serializes the Sentry envelope **immediately** (so timestamps reflect publish/capture time) and publishes it to Magento MQ topic `justbetter.sentry.event.send`. The `justbetter.sentry.event` consumer delivers the same payload later via HTTP.
+2. **Sync mode + circuit breaker**: HTTP is attempted with short timeouts. After `circuit_breaker_failure_threshold` failures the circuit opens and sync calls fail fast. With `async_fallback_on_circuit_open`, events are queued instead of lost.
+3. Transport / capture failures are swallowed so Magento never 500s because Sentry is down.
+
+Run the consumer (or rely on `cron_consumers_runner`):
+
+```bash
+bin/magento queue:consumers:start justbetter.sentry.event
+```
 
 ### Configuration for Adobe Cloud
 Since Adobe Cloud doesn't allow you to add manually add content to the `env.php` file, the configuration can be done
