@@ -38,7 +38,7 @@ vendor/bin/phpunit --filter testOpensAfterThreshold Test/Unit  # single test
 ### Resilience layer (fork-specific — the important part)
 Outbound delivery is abstracted behind `Model/Transport/ResilientTransport.php` (implements Sentry `TransportInterface`), chosen per-request:
 - **Async mode** (`async_sending_enabled`): serialize the envelope *immediately* (so `sent_at`/event timestamps are frozen at capture time), publish to MQ topic `justbetter.sentry.event.send`. The `justbetter.sentry.event` consumer (`Model/Queue/Consumer/SentryEventConsumer.php`) later ships it over HTTP via `Model/Transport/EnvelopeSender.php`.
-- **Sync mode + circuit breaker** (`Model/CircuitBreaker.php`): short-timeout HTTP; after N consecutive failures the circuit *opens* and calls fail fast (states closed→open→half-open→closed, persisted in Magento cache). With `async_fallback_on_circuit_open`, events queue instead of being dropped.
+- **Sync mode + circuit breaker** (`Model/CircuitBreaker.php`): short-timeout HTTP; after N consecutive failures the circuit *opens* and calls fail fast (states closed→open→half-open→closed, persisted in Magento cache). When circuit is open or delivery fails, events are dropped immediately.
 - Re-entrancy guard (`$sending` flag in `ResilientTransport`) prevents a capture triggered *during* publishing/logging from recursing.
 
 MQ wiring: `etc/communication.xml`, `etc/queue_topology.xml`, `etc/queue_consumer.xml`, `etc/queue_publisher.xml`. Run the consumer in async mode:
