@@ -7,6 +7,7 @@ namespace JustBetter\Sentry\Model;
 // phpcs:disable Magento2.Functions.DiscouragedFunction
 
 use JustBetter\Sentry\Helper\Data;
+use JustBetter\Sentry\Model\Transport\ResilientTransportFactory;
 use Magento\Authorization\Model\UserContextInterface;
 use Magento\Backend\Model\Auth\Session as AdminSession;
 use Magento\Customer\Model\Session as CustomerSession;
@@ -36,16 +37,18 @@ class SentryInteraction
     /**
      * SentryInteraction constructor.
      *
-     * @param State           $appState
-     * @param ConfigInterface $omConfigInterface
-     * @param Data            $sentryHelper
-     * @param RemoteAddress   $remoteAddress
+     * @param State                     $appState
+     * @param ConfigInterface           $omConfigInterface
+     * @param Data                      $sentryHelper
+     * @param RemoteAddress             $remoteAddress
+     * @param ResilientTransportFactory $resilientTransportFactory
      */
     public function __construct(
         private State $appState,
         private ConfigInterface $omConfigInterface,
         private Data $sentryHelper,
-        private RemoteAddress $remoteAddress
+        private RemoteAddress $remoteAddress,
+        private ResilientTransportFactory $resilientTransportFactory
     ) {
     }
 
@@ -58,10 +61,14 @@ class SentryInteraction
      */
     public function initialize(array $config): void // @phpstan-ignore missingType.iterableValue
     {
-        $client = ClientBuilder::create($config)
+        $builder = ClientBuilder::create($config)
             ->setSdkIdentifier(static::SDK_IDENTIFIER);
 
-        SentrySdk::init()->bindClient($client->getClient());
+        $builder->setTransport(
+            $this->resilientTransportFactory->create($builder->getOptions())
+        );
+
+        SentrySdk::init()->bindClient($builder->getClient());
     }
 
     /**
