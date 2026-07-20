@@ -1,6 +1,6 @@
 {
-  "name": "justbetter/magento2-sentry",
-  "description": "Magento 2 Logger for Sentry",
+  "name": "vconnect/magento2-sentry",
+  "description": "Magento 2 Logger for Sentry (vConnect DK fork)",
   "keywords": [
     "PHP",
     "Magento",
