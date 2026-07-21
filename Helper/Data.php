@@ -228,7 +228,7 @@ class Data extends AbstractHelper
      */
     public function getDisabledDefaultIntegrations(): array
     {
-        return $this->config['disable_default_integrations'] ?? [];
+        return $this->collectModuleConfig()['disable_default_integrations'] ?? [];
     }
 
     /**
