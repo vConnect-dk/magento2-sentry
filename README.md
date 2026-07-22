@@ -164,6 +164,17 @@ Please note, that it is not possible to use profiling within the Adobe Cloud.
 ## Sending additional data to Sentry when logging errors
 - When calling any function from the [Psr\Log\LoggerInterface](https://github.com/php-fig/log/blob/master/src/LoggerInterface.php) you can pass any data to the parameter $context and it will be send to Sentry as 'Custom context'.
 
+## Identifying which logger/integration an error came from
+The Monolog **channel** is forwarded as the Sentry event's `logger` field, and any processor-added **extra** data is attached as a `monolog.extra` context block. Give each custom logger its own channel `name` (instead of the default `main`) to make this useful:
+
+```xml
+<virtualType name="BusinessCentralApiWebhooksLogger" type="Magento\Framework\Logger\Monolog">
+    <arguments>
+        <argument name="name" xsi:type="string">business_central</argument>
+    </arguments>
+</virtualType>
+```
+
 ## Change / Filter events
 This module has an event called `sentry_before_send` that is dispatched before setting the config [before_send](https://docs.sentry.io/platforms/php/configuration/filtering/#using-platformidentifier-namebefore-send-). This provides the means to edit / filter events. You could for example add extra criteria to determine if the exception should be captured to Sentry. To prevent the Exception from being captured you can set the event to `null` or unset it completly.
 

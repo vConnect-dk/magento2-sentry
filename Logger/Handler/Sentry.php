@@ -48,7 +48,13 @@ if (Logger::API < 3) { // @phpstan-ignore-line
                 return false;
             }
 
-            $this->sentryLog->send($record['message'], $record['level'], $record['context']);
+            $this->sentryLog->send(
+                $record['message'],
+                $record['level'],
+                $record['context'],
+                $record['channel'] ?? null,
+                $record['extra'] ?? []
+            );
 
             return false;
         }
@@ -88,7 +94,13 @@ if (Logger::API < 3) { // @phpstan-ignore-line
                 return false;
             }
 
-            $this->sentryLog->send($record['message'], $record['level'], $record['context']);
+            $this->sentryLog->send(
+                $record['message'],
+                $record['level'],
+                $record['context'],
+                $record['channel'] ?? null,
+                $record['extra'] ?? []
+            );
 
             return false;
         }

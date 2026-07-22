@@ -195,6 +195,8 @@ class GlobalExceptionCatcher
         });
 
         $config->setBeforeSend(function (\Sentry\Event $event, ?\Sentry\EventHint $hint): ?\Sentry\Event {
+            $this->promoteLogChannel($event);
+
             $data = $this->dataObjectFactory->create();
             $data->setEvent($event);
             $data->setHint($hint);
@@ -241,6 +243,27 @@ class GlobalExceptionCatcher
         ]);
 
         return $config;
+    }
+
+    /**
+     * Promote SentryLog's transient `__log_channel` scope extra to Event::logger.
+     *
+     * Always unsets the carrier key so it never leaks into the delivered event's extra.
+     */
+    private function promoteLogChannel(\Sentry\Event $event): void
+    {
+        $extra = $event->getExtra();
+        if (!array_key_exists('__log_channel', $extra)) {
+            return;
+        }
+
+        // Not empty(): a channel literally named "0" is falsy but still a valid channel name.
+        if ($extra['__log_channel'] !== null && $extra['__log_channel'] !== '') {
+            $event->setLogger((string) $extra['__log_channel']);
+        }
+
+        unset($extra['__log_channel']);
+        $event->setExtra($extra);
     }
 
     /**

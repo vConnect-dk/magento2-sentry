@@ -10,6 +10,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\SessionException;
 use Magento\Framework\Logger\Monolog;
 use Sentry\EventHint;
+use Sentry\EventId;
 use Sentry\ExceptionMechanism;
 use Sentry\Stacktrace;
 use Sentry\State\Scope as SentryScope;
@@ -43,8 +44,11 @@ class SentryLog
      * @param \Throwable|string $message
      * @param int               $logLevel
      * @param array             $context
+     * @param string|null       $channel
+     * @param array             $extra
      */
-    public function send($message, $logLevel, array $context = []): void // @phpstan-ignore missingType.iterableValue
+    // @phpstan-ignore-next-line missingType.iterableValue, missingType.iterableValue
+    public function send($message, $logLevel, array $context = [], ?string $channel = null, array $extra = []): void
     {
         $config = $this->data->collectModuleConfig();
         $customTags = [];
@@ -69,26 +73,37 @@ class SentryLog
             unset($context['custom_tags']);
         }
 
-        \Sentry\configureScope(
-            function (SentryScope $scope) use ($context, $customTags): void {
+        // withScope (not configureScope) so tags/context/channel/user-data never outlive this single
+        // capture — configureScope mutates the Hub's persistent scope, leaking into later events.
+        $lastEventId = \Sentry\withScope(
+            function (SentryScope $scope) use ($message, $logLevel, $context, $customTags, $channel, $extra): ?EventId {
                 $this->setTags($scope, $customTags);
                 if ($context !== []) {
                     $scope->setContext('Custom context', $context);
                 }
+
+                if ($extra !== []) {
+                    $scope->setContext('monolog.extra', $extra);
+                }
+
+                if ($channel !== null) {
+                    // Transient carrier: before_send (GlobalExceptionCatcher) promotes this to Event::logger, then strips it.
+                    $scope->setExtra('__log_channel', $channel);
+                }
+
+                $this->sentryInteraction->addUserContext();
+
+                if ($message instanceof \Throwable) {
+                    return \Sentry\captureException($message);
+                }
+
+                return \Sentry\captureMessage(
+                    $message,
+                    \Sentry\Severity::fromError($logLevel),
+                    $this->monologContextToSentryHint($context)
+                );
             }
         );
-
-        $this->sentryInteraction->addUserContext();
-
-        if ($message instanceof \Throwable) {
-            $lastEventId = \Sentry\captureException($message);
-        } else {
-            $lastEventId = \Sentry\captureMessage(
-                $message,
-                \Sentry\Severity::fromError($logLevel),
-                $this->monologContextToSentryHint($context)
-            );
-        }
 
         /// when using JS SDK you can use this for custom error page printing
         try {
