@@ -91,6 +91,12 @@
         <plugin name="sentry-cron-checkin" type="JustBetter\Sentry\Plugin\CronScheduleCheckIn" disabled="false"/>
     </type>
 
+    <type name="JustBetter\Sentry\Model\SentryCron">
+        <arguments>
+            <argument name="cronConfig" xsi:type="object">Magento\Cron\Model\ConfigInterface\Proxy</argument>
+        </arguments>
+    </type>
+
     <!-- Resilient async delivery -->
     <type name="JustBetter\Sentry\Model\SentryInteraction">
         <arguments>

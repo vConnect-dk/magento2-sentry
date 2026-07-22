@@ -3,8 +3,12 @@
 namespace JustBetter\Sentry\Model;
 
 use JustBetter\Sentry\Helper\Data;
+use Magento\Cron\Model\ConfigInterface as CronConfigInterface;
 use Magento\Cron\Model\Schedule;
-use Magento\Customer\Model\Session;
+use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
+use Magento\Store\Model\ScopeInterface;
+use Psr\Log\LoggerInterface;
 use Sentry\CheckInStatus;
 use Sentry\MonitorConfig;
 use Sentry\MonitorSchedule;
@@ -17,14 +21,27 @@ class SentryCron
     protected array $runningCheckins = [];
 
     /**
-     * SentryLog constructor.
+     * Cron expression resolved from cron config, keyed by job code.
      *
-     * @param Data    $data
-     * @param Session $customerSession
+     * @var array<string,?string>
+     */
+    private array $resolvedExpr = [];
+
+    /**
+     * SentryCron constructor.
+     *
+     * @param Data                 $data
+     * @param CronConfigInterface  $cronConfig
+     * @param ScopeConfigInterface $scopeConfig
+     * @param TimezoneInterface    $timezone
+     * @param LoggerInterface      $logger
      */
     public function __construct(
         protected Data $data,
-        protected Session $customerSession,
+        private readonly CronConfigInterface $cronConfig,
+        private readonly ScopeConfigInterface $scopeConfig,
+        private readonly TimezoneInterface $timezone,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -61,11 +78,26 @@ class SentryCron
 
         /** @var array|null $cronExpressionArr */
         $cronExpressionArr = $schedule->getCronExprArr(); // @phpstan-ignore missingType.iterableValue
-        $monitorConfig = null;
-        if (!empty($cronExpressionArr)) {
-            $cronExpression = implode(' ', $cronExpressionArr);
-            $monitorConfig = new MonitorConfig(MonitorSchedule::crontab($cronExpression));
+        $cronExpression = !empty($cronExpressionArr)
+            ? implode(' ', $cronExpressionArr)
+            : $this->resolveCronExpression($schedule->getJobCode());
+
+        if (!$cronExpression) {
+            // No schedule known statically or at runtime -> skip rather than send an empty config Sentry can't upsert.
+            $this->logger->warning(
+                'Sentry cron check-in skipped: no resolvable schedule',
+                ['job_code' => $schedule->getJobCode()]
+            );
+
+            return;
         }
+
+        $monitorConfig = new MonitorConfig(
+            MonitorSchedule::crontab($cronExpression),
+            checkinMargin: null,
+            maxRuntime: null,
+            timezone: $this->timezone->getConfigTimezone(),
+        );
 
         if ($status === Schedule::STATUS_RUNNING) {
             if (!isset($this->runningCheckins[$schedule->getId()])) {
@@ -116,5 +148,44 @@ class SentryCron
         );
 
         unset($this->runningCheckins[$schedule->getId()]);
+    }
+
+    /**
+     * Resolve a job's cron expression from static cron config (crontab.xml `schedule`/`config_path`).
+     *
+     * Used when the runtime schedule carries none, since `cron_expr` isn't a `cron_schedule` DB column.
+     * Precedence and scope mirror Magento\Cron\Observer\ProcessCronQueueObserver::getCronExpression():
+     * `config_path` (store-scoped) wins when set, `schedule` is only a fallback.
+     *
+     * @param string $jobCode
+     *
+     * @return string|null
+     */
+    private function resolveCronExpression(string $jobCode): ?string
+    {
+        if (array_key_exists($jobCode, $this->resolvedExpr)) {
+            return $this->resolvedExpr[$jobCode];
+        }
+
+        $expr = null;
+        foreach ($this->cronConfig->getJobs() as $group) {
+            if (!isset($group[$jobCode])) {
+                continue;
+            }
+
+            $job = $group[$jobCode];
+            if (!empty($job['config_path'])) {
+                $val  = $this->scopeConfig->getValue($job['config_path'], ScopeInterface::SCOPE_STORE);
+                $expr = !$val ? null : (string) $val;
+            }
+
+            if (!$expr && !empty($job['schedule'])) {
+                $expr = (string) $job['schedule'];
+            }
+
+            break;
+        }
+
+        return $this->resolvedExpr[$jobCode] = $expr;
     }
 }
