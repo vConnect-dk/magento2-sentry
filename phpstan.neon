@@ -1,11 +1,10 @@
-includes:
-    - ./vendor/justbetter/magento2-coding-standard/phpstan.neon
-
 parameters:
+    level: 8
     paths:
         - .
     excludePaths:
-        - vendor
+        - Test/**
         - Logger/Handler/Sentry.php
-    level: 8
-    reportUnmatchedIgnoredErrors: false
+    editorUrl: 'phpstorm://open?file=%%file%%&line=%%line%%'
+includes:
+    - ../../../dev/tests/static/testsuite/Magento/Test/Php/_files/phpstan/phpstan.neon
